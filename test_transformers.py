@@ -4,6 +4,7 @@ import torch
 
 dummy_dataset = load_dataset("common_voice", "ab", split="test")
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print("Device used:", device)
 
 model = AutoModelForCTC.from_pretrained("hf-internal-testing/tiny-random-wav2vec2")
 model.to(device)
