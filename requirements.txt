@@ -12,3 +12,10 @@ python-dotenv>=0.5.1
 # deep deep learning
 transformers
 datasets
+
+# pyctcdecode
+pypi-kenlm
+pandas
+pyctcdecode
+pydub
+soundfile 
