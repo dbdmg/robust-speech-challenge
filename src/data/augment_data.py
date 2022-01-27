@@ -31,7 +31,7 @@ def augment_samples (
     )
 
     audio_samples = [d[signal_key] for d in list_samples]
-    augmented_signals = pply_augmentation(audio_samples, sample_rate=sample_rate)
+    augmented_signals = apply_augmentation(audio_samples, sample_rate=sample_rate)
 
     for i, d in list_samples:
         list_samples[i][signal_key] = augmented_signals[i]
