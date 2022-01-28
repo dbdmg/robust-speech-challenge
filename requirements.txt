@@ -11,6 +11,8 @@ python-dotenv>=0.5.1
 
 # audio data augmentations
 torch-audiomentations
+librosa
+pysrt
 
 # deep deep learning
 transformers
