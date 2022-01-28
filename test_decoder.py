@@ -19,6 +19,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     
     parser.add_argument("-k", "--kenlm", type=str, help="Path to the trained kenlm model.", required=True)
+    parser.add_argument("-m", "--model_name_or_path", type=str, help="Path to pretrained model or model identifier from huggingface.co/models", required=True)
     parser.add_argument("-d", "--datadir", type=str, help="Path to validation dataset.", required=True)
     parser.add_argument("-l", "--datalist", type=str, help="Path to the samples tabular list in CSV containing audio path, size and transcript.", required=True)
     
@@ -46,6 +47,7 @@ args = get_args()
 KENLM_MODEL_LOC = args.kenlm
 SPGI_VAL_DIR = args.datadir
 SPGI_VAL_CSV = args.datalist
+MODEL_NAME = args.model_name_or_path
 
 
 # Load the val csv
@@ -60,9 +62,9 @@ val_df = pd.read_csv(SPGI_VAL_CSV, sep='|')
 #*****************************************************#
 #______________ Todo: Customize the model ____________#
 asr_processor = Wav2Vec2Processor.from_pretrained(
-    "facebook/wav2vec2-base-960h")
+    MODEL_NAME)
 asr_model = Wav2Vec2ForCTC.from_pretrained(
-    "facebook/wav2vec2-base-960h")
+    MODEL_NAME)
 print("Vocab: ", asr_processor.tokenizer.get_vocab())
 
 #*****************************************************#
@@ -71,7 +73,7 @@ print("Vocab: ", asr_processor.tokenizer.get_vocab())
 # Make vocab more human readable
 # Replace <pad> character with placeholder '_'
 # Replace '|' with ' '
-# This is done for compatability with the greedy decode function
+# This is done for compatibility with the greedy decode function
 # which is based off characters TODO @ray rewrite gd
 vocab = list(asr_processor.tokenizer.get_vocab().keys())
 vocab[0] = '_'

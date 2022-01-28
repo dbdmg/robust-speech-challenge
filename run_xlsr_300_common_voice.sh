@@ -1,10 +1,10 @@
 #!/bin/bash
 
 python run_speech_recognition_ctc_bnb.py \
-	--dataset_name="common_voice" \
-	--model_name_or_path="facebook/wav2vec2-large-xlsr-53" \
+	--dataset_name="mozilla-foundation/common_voice_7_0" \
+	--model_name_or_path="facebook/wav2vec2-xls-r-300m" \
 	--dataset_config_name="it" \
-	--output_dir="../robust-asr-italian" \
+	--output_dir="../wav2vec2-xls-r-300m-italian" \
 	--overwrite_output_dir \
 	--num_train_epochs="5" \
 	--per_device_train_batch_size="64" \
@@ -23,5 +23,6 @@ python run_speech_recognition_ctc_bnb.py \
 	--fp16 \
 	--group_by_length \
 	--push_to_hub \
-	--hub_model_id="dbdmg/robust-asr-italian" \
+    --use_auth_token \
+	--hub_model_id="dbdmg/wav2vec2-xls-r-300m-italian" \
 	--do_train --do_eval 
