@@ -15,6 +15,7 @@
 
 """ Fine-tuning a 🤗 Transformers CTC model for automatic speech recognition"""
 
+import comet_ml
 import functools
 import json
 import logging
