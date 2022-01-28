@@ -15,6 +15,10 @@
 
 """ Fine-tuning a 🤗 Transformers CTC model for automatic speech recognition"""
 
+from dotenv import load_dotenv
+load_dotenv()  # take environment variables from .env.
+
+import comet_ml
 import functools
 import json
 import logging
