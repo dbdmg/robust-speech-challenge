@@ -39,7 +39,14 @@ def extract_chunks(audio_file: str, srt_file: str) -> Tuple[List[Tuple[np.ndarra
         ndx_start = get_index(ts_start, sr)
         ndx_end = get_index(ts_end, sr)
 
+        if seq.ndim == 1:
+            # mono
+            audio_chunk = seq[ndx_start:ndx_end]
+        else:
+            # stereo (multi-channel)
+            audio_chunk = seq[:, ndx_start:ndx_end]
+
         # NOTE: the subtitle may require some further processing
         # (e.g. to remove newlines, brackets, etc.)
-        chunks.append((seq[ndx_start:ndx_end], sub.text))
+        chunks.append((audio_chunk, sub.text))
     return chunks, sr
