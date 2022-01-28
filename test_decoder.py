@@ -38,7 +38,7 @@ def greedy_decode(logits, labels):
     return "".join(out)
 
 
-agrs = get_args()
+args = get_args()
 
 # KENLM_MODEL_LOC = "/home/raymond/demos/data/demo_huggingface_spgispeech.arpa"
 # SPGI_VAL_DIR = "/data-ssd-2/speech_data/spgispeech/val/"
