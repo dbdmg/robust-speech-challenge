@@ -73,7 +73,7 @@ print("Vocab: ", asr_processor.tokenizer.get_vocab())
 # Make vocab more human readable
 # Replace <pad> character with placeholder '_'
 # Replace '|' with ' '
-# This is done for compatability with the greedy decode function
+# This is done for compatibility with the greedy decode function
 # which is based off characters TODO @ray rewrite gd
 vocab = list(asr_processor.tokenizer.get_vocab().keys())
 vocab[0] = '_'
