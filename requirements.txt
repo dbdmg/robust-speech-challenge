@@ -15,3 +15,10 @@ torch-audiomentations
 # deep deep learning
 transformers
 datasets
+
+# pyctcdecode
+pypi-kenlm
+pandas
+pyctcdecode
+pydub
+soundfile 
