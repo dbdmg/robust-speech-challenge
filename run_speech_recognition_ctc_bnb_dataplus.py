@@ -663,13 +663,14 @@ def main():
         return batch
 
     with training_args.main_process_first(desc="dataset map preprocessing"):
-        vectorized_datasets_train = raw_datasets["train"].map(
+        vectorized_datasets = {}
+        vectorized_datasets["train"] = raw_datasets["train"].map(
             prepare_dataset_train,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
             desc="preprocess datasets",
         )
-        vectorized_datasets = raw_datasets["eval"].map(
+        vectorized_datasets["eval"] = raw_datasets["eval"].map(
             prepare_dataset_eval,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
