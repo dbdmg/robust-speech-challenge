@@ -625,16 +625,28 @@ def main():
 
     # Preprocessing the datasets.
     # We need to read the audio files as arrays and tokenize the targets.
-    def prepare_dataset(batch):
+    def prepare_dataset_train(batch):
         # load audio
         sample = batch[audio_column_name]
 
-        
-        print ("sample pre  ", sample)
-        ''' Data augmentation start '''
         sample = augment_samples(sample, noise_root_path=data_args.noise_root_path)
-        ''' Data augmentation end '''
-        print ("sample post ", sample)
+
+        inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
+
+        batch["input_values"] = inputs.input_values[0]
+        batch["input_length"] = len(batch["input_values"])
+
+        # encode targets
+        additional_kwargs = {}
+        if phoneme_language is not None:
+            additional_kwargs["phonemizer_lang"] = phoneme_language
+
+        batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
+        return batch
+
+    def prepare_dataset_eval(batch):
+        # load audio
+        sample = batch[audio_column_name]
 
         inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
 
@@ -651,8 +663,14 @@ def main():
         return batch
 
     with training_args.main_process_first(desc="dataset map preprocessing"):
-        vectorized_datasets = raw_datasets.map(
-            prepare_dataset,
+        vectorized_datasets_train = raw_datasets["train"].map(
+            prepare_dataset_train,
+            remove_columns=next(iter(raw_datasets.values())).column_names,
+            num_proc=num_workers,
+            desc="preprocess datasets",
+        )
+        vectorized_datasets = raw_datasets["eval"].map(
+            prepare_dataset_eval,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
             desc="preprocess datasets",
