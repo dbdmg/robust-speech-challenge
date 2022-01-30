@@ -131,6 +131,9 @@ class ModelArguments:
     ctc_loss_reduction: Optional[str] = field(
         default="mean", metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."}
     )
+    ctc_zero_infinity: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to zero infinite losses and the associated gradients of torch.nn.CTCLoss. Infinite losses mainly occur when the inputs are too short to be aligned to the targets."}
+    )
 
 
 @dataclass
