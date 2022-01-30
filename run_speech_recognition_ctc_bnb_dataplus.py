@@ -111,36 +111,15 @@ def augment (
     noise_root_path: str,
     sampling_rate: int = 16_000,
     device: str = "cuda",
+    apply_augmentation=None,
     ):
 
-    
-
     if random.choice([0, 1]) == 1:
-        apply_augmentation = Compose(
-            transforms=[
-                AddBackgroundNoise(
-                    background_paths=noise_root_path,
-                    p=0.5,
-                ),
-                HighPassFilter(
-                    p=0.25
-                ),
-                LowPassFilter(
-                    p=0.25
-                ),
-                PitchShift(
-                    sample_rate = sampling_rate,
-                    min_transpose_semitones = -2.0,
-                    max_transpose_semitones = 2.0,
-                    p=0.05
-                )
-            ]
-        )
-
         try:
             audio_array = torch.from_numpy(sample)
-            audio_array = audio_array[None, None, :]
+            audio_array = audio_array[None, :]
             augmented_signal = apply_augmentation(audio_array, sample_rate=sampling_rate)
+            return augmented_signal[0, :]
         except Exception as e:
             print (e)
             return sample
@@ -503,8 +482,8 @@ def main():
         raw_datasets["train"] = load_dataset(
             data_args.dataset_name,
             data_args.dataset_config_name,
-            #split=data_args.train_split_name,
-            split="train[:1%]",
+            split=data_args.train_split_name,
+            #split="train[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -529,8 +508,8 @@ def main():
         raw_datasets["eval"] = load_dataset(
             data_args.dataset_name,
             data_args.dataset_config_name,
-            #split=data_args.eval_split_name,
-            split="validation[:1%]",
+            split=data_args.eval_split_name,
+            #split="validation[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -699,35 +678,66 @@ def main():
         batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
         
         return batch
+    
+    def prepare_dataset_eval(batch):
+        # load audio
+        sample = batch[audio_column_name]
+        inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
+        batch["input_values"] = inputs.input_values[0]
+        batch["input_length"] = len(batch["input_values"])
+        batch["sampling_rate"] = sample["sampling_rate"]
+
+        # encode targets
+        additional_kwargs = {}
+        if phoneme_language is not None:
+            additional_kwargs["phonemizer_lang"] = phoneme_language
+
+        batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
+        
+        return batch
+    
+    apply_augmentation = Compose(
+            transforms=[
+                AddBackgroundNoise(
+                    background_paths=data_args.noise_root_path,
+                    p=0.5,
+                ),
+                HighPassFilter(
+                    p=0.25
+                ),
+                LowPassFilter(
+                    p=0.25
+                )
+            ]
+        )
 
     def augment_data(sample):
         sampling_rate = 16_000
-        array = np.asarray(sample["input_values"])
-        augmented = augment(array, noise_root_path=data_args.noise_root_path, sampling_rate=sampling_rate)
+        augmented = augment(np.asarray(sample["input_values"]), noise_root_path=data_args.noise_root_path, sampling_rate=sampling_rate, apply_augmentation=apply_augmentation)
         inputs = feature_extractor(augmented, sampling_rate=sampling_rate)
-        sample["input_values"] = inputs.input_values[0]
-        sample["labels"] = sample["labels"]
-        sample["input_length"] = len(sample["input_values"][0])
-        return sample
+        item = {
+            "input_values": inputs.input_values[0],
+            "labels" : sample["labels"],
+            "input_length" : sample["input_values"][0]
+        }
+        return item
         
 
     print ("\n\n *********** Preparing dataset *********** \n\n")
     with training_args.main_process_first(desc="dataset map preprocessing"):
-       
-        vectorized_datasets = raw_datasets.map(
+        vectorized_datasets=datasets.DatasetDict()
+        vectorized_datasets["train"] = raw_datasets["train"].map(
             prepare_dataset,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
-            desc="preprocess datasets",
+            desc="preprocess datasets train",
         )
-        '''
         vectorized_datasets["eval"] = raw_datasets["eval"].map(
             prepare_dataset_eval,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
-            desc="preprocess datasets",
+            desc="preprocess datasets eval",
         )
-        '''
 
         def is_audio_in_length_range(length):
             return length > min_input_length and length < max_input_length
