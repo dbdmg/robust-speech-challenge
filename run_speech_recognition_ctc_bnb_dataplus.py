@@ -61,7 +61,7 @@ from torch_audiomentations import Compose, AddBackgroundNoise, HighPassFilter, L
 def augment_samples (
     list_arrays: list,
     noise_root_path: str,
-    sample_rate: int = 16_000,
+    sampling_rate: int = 16_000,
     signal_key: str = "array",
     device: str = "cpu",
     ):
@@ -79,7 +79,7 @@ def augment_samples (
                 p=0.25
             ),
             PitchShift(
-                sample_rate = sample_rate,
+                sample_rate = sampling_rate,
                 min_transpose_semitones = -2.0,
                 max_transpose_semitones = 2.0,
                 p=0.05
@@ -89,17 +89,64 @@ def augment_samples (
 
     aug_list_arrays = []
     for e in list_arrays:
+        audio_array = np.asarray(e)
         if random.choice([0, 1]) == 1:
-            audio_array = torch.from_numpy(e)
-            audio_array = torch.unsqueeze(audio_array, dim=0)
-            audio_array = torch.unsqueeze(audio_array, dim=0)
-            augmented_signal = apply_augmentation(audio_array, sample_rate=sample_rate)
-            augmented_signal = augmented_signal[0, 0, :]
-            aug_list_arrays.append(augmented_signal)
+            try:
+                audio_array = torch.from_numpy(audio_array)
+                audio_array = audio_array[None, None, :]
+                augmented_signal = apply_augmentation(audio_array, sample_rate=sampling_rate)
+                augmented_signal = augmented_signal[0, 0, :]
+                aug_list_arrays.append(augmented_signal)
+            except Exception as e:
+                aug_list_arrays.append(audio_array)
+                print (e)
         else:
-            aug_list_arrays.append(e)
+            aug_list_arrays.append(audio_array)
         
     return aug_list_arrays
+
+
+def augment (
+    sample,
+    noise_root_path: str,
+    sampling_rate: int = 16_000,
+    device: str = "cuda",
+    ):
+
+    
+
+    if random.choice([0, 1]) == 1:
+        apply_augmentation = Compose(
+            transforms=[
+                AddBackgroundNoise(
+                    background_paths=noise_root_path,
+                    p=0.5,
+                ),
+                HighPassFilter(
+                    p=0.25
+                ),
+                LowPassFilter(
+                    p=0.25
+                ),
+                PitchShift(
+                    sample_rate = sampling_rate,
+                    min_transpose_semitones = -2.0,
+                    max_transpose_semitones = 2.0,
+                    p=0.05
+                )
+            ]
+        )
+
+        try:
+            audio_array = torch.from_numpy(sample)
+            audio_array = audio_array[None, None, :]
+            augmented_signal = apply_augmentation(audio_array, sample_rate=sampling_rate)
+        except Exception as e:
+            print (e)
+            return sample
+    else:
+        return sample
+
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -456,7 +503,8 @@ def main():
         raw_datasets["train"] = load_dataset(
             data_args.dataset_name,
             data_args.dataset_config_name,
-            split=data_args.train_split_name,
+            #split=data_args.train_split_name,
+            split="train[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -481,7 +529,8 @@ def main():
         raw_datasets["eval"] = load_dataset(
             data_args.dataset_name,
             data_args.dataset_config_name,
-            split=data_args.eval_split_name,
+            #split=data_args.eval_split_name,
+            split="validation[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -632,32 +681,15 @@ def main():
     phoneme_language = data_args.phoneme_language
 
     # Preprocessing the datasets.
-    # We need to read the audio files as arrays and tokenize the targets.
-    def prepare_dataset_train(batch):
-        # load audio
-        sample = batch[audio_column_name]
-
-        sample = augment_samples(sample, noise_root_path=data_args.noise_root_path)
-
-        inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
-
-        batch["input_values"] = inputs.input_values[0]
-        batch["input_length"] = len(batch["input_values"])
-
-        # encode targets
-        additional_kwargs = {}
-        if phoneme_language is not None:
-            additional_kwargs["phonemizer_lang"] = phoneme_language
-
-        batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
-        return batch
+    # We need to read the audio files as arrays and tokenize the targets
 
     def prepare_dataset(batch):
         # load audio
         sample = batch[audio_column_name]
         #inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
-        batch["input_values"] = batch[audio_column_name]#inputs.input_values[0]
+        batch["input_values"] = batch[audio_column_name]["array"]#inputs.input_values[0]
         batch["input_length"] = len(batch["input_values"])
+        batch["sampling_rate"] = sample["sampling_rate"]
 
         # encode targets
         additional_kwargs = {}
@@ -665,21 +697,18 @@ def main():
             additional_kwargs["phonemizer_lang"] = phoneme_language
 
         batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
+        
         return batch
 
-    def augment_data(examples):
-        print (type(examples))
-        print (examples)
-        sampling_rate = examples["sampling_rate"]
-        list_arrays = [e[audio_column_name] for e in examples]
-        list_arrays = augment_samples(list_arrays, noise_root_path=data_args.noise_root_path, sampling_rate=sampling_rate)
-        '''
-        for i, e in enumerate(examples):
-            examples[i][audio_column_name] = list_arrays[i]
-        '''
-        inputs = feature_extractor(list_arrays, sampling_rate=sampling_rate)
-        batch["input_values"] = inputs.input_values[0]
-        batch["input_length"] = len(examples["input_values"])
+    def augment_data(sample):
+        sampling_rate = 16_000
+        array = np.asarray(sample["input_values"])
+        augmented = augment(array, noise_root_path=data_args.noise_root_path, sampling_rate=sampling_rate)
+        inputs = feature_extractor(augmented, sampling_rate=sampling_rate)
+        sample["input_values"] = inputs.input_values[0]
+        sample["labels"] = sample["labels"]
+        sample["input_length"] = len(sample["input_values"][0])
+        return sample
         
 
     print ("\n\n *********** Preparing dataset *********** \n\n")
@@ -700,7 +729,6 @@ def main():
         )
         '''
 
-        
         def is_audio_in_length_range(length):
             return length > min_input_length and length < max_input_length
 
@@ -711,9 +739,8 @@ def main():
             input_columns=["input_length"],
         )
         
-
-
-    vectorized_datasets["train"].set_transform(augment_data)
+        vectorized_datasets["train"].set_transform(augment_data, columns=["input_values", "labels", "sampling_rate"])
+    
     # 7. Next, we can prepare the training.
     # Let's use word error rate (WER) as our evaluation metric,
     # instantiate a data collator and the trainer
