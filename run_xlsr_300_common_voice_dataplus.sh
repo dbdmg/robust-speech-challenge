@@ -14,7 +14,7 @@ python run_speech_recognition_ctc_bnb_dataplus.py \
 	--text_column_name="sentence" \
 	--length_column_name="input_length" \
 	--save_steps="400" \
-	--eval_steps="100" \
+	--eval_steps="200" \
 	--layerdrop="0.0" \
 	--save_total_limit="3" \
 	--freeze_feature_encoder \
@@ -26,4 +26,7 @@ python run_speech_recognition_ctc_bnb_dataplus.py \
     --use_auth_token \
 	--hub_model_id="dbdmg/wav2vec2-xls-r-300m-italian-augmented" \
     --noise_root_path="/workspace/helper_data/UrbanSound8K/audio/" \
+    --dataloader_num_workers="16" \
+    --ctc_zero_infinity \
+    --dataloader_pin_memory \
 	--do_train --do_eval 

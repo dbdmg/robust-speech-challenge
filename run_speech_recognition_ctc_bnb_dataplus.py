@@ -33,11 +33,8 @@ import datasets
 import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset, load_metric
-<<<<<<< HEAD
-=======
 import random
 
->>>>>>> 0f706518edfe45ae24977354ab0d1f0205b5faf4
 
 import bitsandbytes as bnb
 import transformers
@@ -89,7 +86,6 @@ def augment_samples (
             )
         ]
     )
-
 
     aug_list_arrays = []
     for e in list_arrays:
@@ -209,6 +205,9 @@ class ModelArguments:
     ctc_loss_reduction: Optional[str] = field(
         default="mean", metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."}
     )
+    ctc_zero_infinity: Optional[bool] = field(
+        default=False, metadata={"help": "Whether to zero infinite losses and the associated gradients of torch.nn.CTCLoss. Infinite losses mainly occur when the inputs are too short to be aligned to the targets."}
+    )
 
 
 @dataclass
@@ -228,6 +227,7 @@ class DataTrainingArguments:
     noise_root_path: str = field(
         metadata={"help": "The root folder containing background noise signals."}
     )
+
     dataset_config_name: str = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
@@ -327,6 +327,7 @@ class DataTrainingArguments:
         },
     )
 
+
 @dataclass
 class DataCollatorCTCWithPadding:
     """
@@ -356,8 +357,7 @@ class DataCollatorCTCWithPadding:
     processor: AutoProcessor
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
-    pad_to_multiple_of_labels: Optional[int] = Noneù
-
+    pad_to_multiple_of_labels: Optional[int] = None
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # split inputs and labels since they have to be of different lenghts and need
         # different padding methods
@@ -626,6 +626,7 @@ def main():
             "pad_token_id": tokenizer.pad_token_id,
             "vocab_size": len(tokenizer),
             "activation_dropout": model_args.activation_dropout,
+            "ctc_zero_infinity": model_args.ctc_zero_infinity
         }
     )
 
@@ -740,7 +741,6 @@ def main():
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
             desc="preprocess datasets eval",
-
         )
 
         def is_audio_in_length_range(length):
