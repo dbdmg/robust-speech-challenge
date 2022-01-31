@@ -546,6 +546,7 @@ def main():
             "pad_token_id": tokenizer.pad_token_id,
             "vocab_size": len(tokenizer),
             "activation_dropout": model_args.activation_dropout,
+            "ctc_zero_infinity": model_args.ctc_zero_infinity
         }
     )
 
