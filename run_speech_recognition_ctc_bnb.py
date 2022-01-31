@@ -749,7 +749,7 @@ def main():
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
         "tasks": "speech-recognition",
-        "tags": ["automatic-speech-recognition", data_args.dataset_name],
+        "tags": ["automatic-speech-recognition", data_args.dataset_name, "robust-speech-event"],
         "dataset_args": f"Config: {config_name}, Training split: {data_args.train_split_name}, Eval split: {data_args.eval_split_name}",
         "dataset": f"{data_args.dataset_name.upper()} - {config_name.upper()}",
     }
