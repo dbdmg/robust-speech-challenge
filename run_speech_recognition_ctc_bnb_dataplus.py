@@ -33,6 +33,11 @@ import datasets
 import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset, load_metric
+<<<<<<< HEAD
+=======
+import random
+
+>>>>>>> 0f706518edfe45ae24977354ab0d1f0205b5faf4
 
 import bitsandbytes as bnb
 import transformers
@@ -57,9 +62,9 @@ import torch
 from torch_audiomentations import Compose, AddBackgroundNoise, HighPassFilter, LowPassFilter, PitchShift
 
 def augment_samples (
-    list_samples: list,
+    list_arrays: list,
     noise_root_path: str,
-    sample_rate: int = 16_000,
+    sampling_rate: int = 16_000,
     signal_key: str = "array",
     device: str = "cpu",
     ):
@@ -77,7 +82,7 @@ def augment_samples (
                 p=0.25
             ),
             PitchShift(
-                sample_rate = sr,
+                sample_rate = sampling_rate,
                 min_transpose_semitones = -2.0,
                 max_transpose_semitones = 2.0,
                 p=0.05
@@ -85,13 +90,46 @@ def augment_samples (
         ]
     )
 
-    audio_samples = [d[signal_key] for d in list_samples]
-    augmented_signals = apply_augmentation(audio_samples, sample_rate=sample_rate)
 
-    for i, d in list_samples:
-        list_samples[i][signal_key] = augmented_signals[i]
+    aug_list_arrays = []
+    for e in list_arrays:
+        audio_array = np.asarray(e)
+        if random.choice([0, 1]) == 1:
+            try:
+                audio_array = torch.from_numpy(audio_array)
+                audio_array = audio_array[None, None, :]
+                augmented_signal = apply_augmentation(audio_array, sample_rate=sampling_rate)
+                augmented_signal = augmented_signal[0, 0, :]
+                aug_list_arrays.append(augmented_signal)
+            except Exception as e:
+                aug_list_arrays.append(audio_array)
+                print (e)
+        else:
+            aug_list_arrays.append(audio_array)
+        
+    return aug_list_arrays
 
-    return list_samples
+
+def augment (
+    sample,
+    noise_root_path: str,
+    sampling_rate: int = 16_000,
+    device: str = "cuda",
+    apply_augmentation=None,
+    ):
+
+    if random.choice([0, 1]) == 1:
+        try:
+            audio_array = torch.from_numpy(sample)
+            audio_array = audio_array[None, :]
+            augmented_signal = apply_augmentation(audio_array, sample_rate=sampling_rate)
+            return augmented_signal[0, :]
+        except Exception as e:
+            print (e)
+            return sample
+    else:
+        return sample
+
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -185,6 +223,10 @@ class DataTrainingArguments:
 
     dataset_name: str = field(
         metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+
+    noise_root_path: str = field(
+        metadata={"help": "The root folder containing background noise signals."}
     )
     dataset_config_name: str = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
@@ -285,11 +327,6 @@ class DataTrainingArguments:
         },
     )
 
-    noise_root_path: str = field(
-        metadata={"help": "The root folder containing background noise signals."}
-    )
-
-
 @dataclass
 class DataCollatorCTCWithPadding:
     """
@@ -319,7 +356,7 @@ class DataCollatorCTCWithPadding:
     processor: AutoProcessor
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
-    pad_to_multiple_of_labels: Optional[int] = None
+    pad_to_multiple_of_labels: Optional[int] = Noneù
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # split inputs and labels since they have to be of different lenghts and need
@@ -449,6 +486,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             split=data_args.train_split_name,
+            #split="train[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -474,6 +512,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             split=data_args.eval_split_name,
+            #split="validation[:1%]",
             use_auth_token=data_args.use_auth_token,
         )
 
@@ -624,17 +663,15 @@ def main():
     phoneme_language = data_args.phoneme_language
 
     # Preprocessing the datasets.
-    # We need to read the audio files as arrays and tokenize the targets.
-    def prepare_dataset_train(batch):
+    # We need to read the audio files as arrays and tokenize the targets
+
+    def prepare_dataset(batch):
         # load audio
         sample = batch[audio_column_name]
-
-        sample = augment_samples(sample, noise_root_path=data_args.noise_root_path)
-
-        inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
-
-        batch["input_values"] = inputs.input_values[0]
+        #inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
+        batch["input_values"] = batch[audio_column_name]["array"]#inputs.input_values[0]
         batch["input_length"] = len(batch["input_values"])
+        batch["sampling_rate"] = sample["sampling_rate"]
 
         # encode targets
         additional_kwargs = {}
@@ -642,17 +679,16 @@ def main():
             additional_kwargs["phonemizer_lang"] = phoneme_language
 
         batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
+        
         return batch
-
+    
     def prepare_dataset_eval(batch):
         # load audio
         sample = batch[audio_column_name]
-
         inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
-
-
         batch["input_values"] = inputs.input_values[0]
         batch["input_length"] = len(batch["input_values"])
+        batch["sampling_rate"] = sample["sampling_rate"]
 
         # encode targets
         additional_kwargs = {}
@@ -660,21 +696,51 @@ def main():
             additional_kwargs["phonemizer_lang"] = phoneme_language
 
         batch["labels"] = tokenizer(batch["target_text"], **additional_kwargs).input_ids
+        
         return batch
+    
+    apply_augmentation = Compose(
+            transforms=[
+                AddBackgroundNoise(
+                    background_paths=data_args.noise_root_path,
+                    p=0.5,
+                ),
+                HighPassFilter(
+                    p=0.25
+                ),
+                LowPassFilter(
+                    p=0.25
+                )
+            ]
+        )
 
+    def augment_data(sample):
+        sampling_rate = 16_000
+        augmented = augment(np.asarray(sample["input_values"]), noise_root_path=data_args.noise_root_path, sampling_rate=sampling_rate, apply_augmentation=apply_augmentation)
+        inputs = feature_extractor(augmented, sampling_rate=sampling_rate)
+        item = {
+            "input_values": inputs.input_values[0],
+            "labels" : sample["labels"],
+            "input_length" : sample["input_values"][0]
+        }
+        return item
+        
+
+    print ("\n\n *********** Preparing dataset *********** \n\n")
     with training_args.main_process_first(desc="dataset map preprocessing"):
-        vectorized_datasets = {}
+        vectorized_datasets=datasets.DatasetDict()
         vectorized_datasets["train"] = raw_datasets["train"].map(
-            prepare_dataset_train,
+            prepare_dataset,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
-            desc="preprocess datasets",
+            desc="preprocess datasets train",
         )
         vectorized_datasets["eval"] = raw_datasets["eval"].map(
             prepare_dataset_eval,
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
-            desc="preprocess datasets",
+            desc="preprocess datasets eval",
+
         )
 
         def is_audio_in_length_range(length):
@@ -686,7 +752,9 @@ def main():
             num_proc=num_workers,
             input_columns=["input_length"],
         )
-
+        
+        vectorized_datasets["train"].set_transform(augment_data, columns=["input_values", "labels", "sampling_rate"])
+    
     # 7. Next, we can prepare the training.
     # Let's use word error rate (WER) as our evaluation metric,
     # instantiate a data collator and the trainer
