@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Union, Dict, List, Tuple
 
 def build_decoder(asr_processor,
-                  asr_model,
                   kenlm_path: Union[str, Path],
                   alpha: float,
                   beta: float,
@@ -22,8 +21,6 @@ def build_decoder(asr_processor,
     ----------
     asr_processor: Wav2Vec2Processor
         Wav2Vec2Processor instance
-    asr_model: Wav2Vec2ForCTC
-        Wav2Vec2 model obtained by invoking Wav2Vec2ForCTC.from_pretrained
     kenlm_path: str or Path
         Path to trained KenLM
     alpha: float
@@ -51,8 +48,8 @@ def build_decoder(asr_processor,
         return decoder
     
     processor_with_lm = Wav2Vec2ProcessorWithLM(
-        feature_extractor=processor.feature_extractor,
-        tokenizer=processor.tokenizer,
+        feature_extractor=asr_processor.feature_extractor,
+        tokenizer=asr_processor.tokenizer,
         decoder=decoder
     )
     
@@ -63,13 +60,17 @@ def grid_search_decoder(asr_processor,
                         kenlm_path: Union[str, Path],
                         alpha_beta_generator,
                         audio_sample,
-                        metric=None):
+                        metric=None,
+                        device=None):
     if metric is None:
         metric = load_metric('wer')
+    if device is None:
+      device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
-    inputs = (audio_sample["audio"]["array"],
-              sampling_rate=audio_sample["audio"]["sampling_rate"],
-              return_tensors="pt")
+    inputs = {
+          'sampling_rate': audio_sample["audio"]["sampling_rate"],
+          'return_tensors': "pt"
+         }
         
     best_metric = -1
     result_dict = {}
@@ -81,8 +82,9 @@ def grid_search_decoder(asr_processor,
                                           beta=beta,
                                           return_decoder=False)
         with torch.no_grad():
-            logits = processor_with_lm(**inputs).logits
-        transcription = processor.batch_decode(logits.cpu().numpy()).text
+            ins = processor_with_lm(audio_sample["audio"]["array"], **inputs)
+            logits = asr_model(**ins).logits.to(device)
+        transcription = asr_processor.batch_decode(logits.cpu().numpy()).text
         metric_score = metric.compute(predictions=transcription, references=audio_sample['text'])
         result_dict[(alpha, beta)] = metric_score
         if metric_score > best_metric:
