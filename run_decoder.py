@@ -85,7 +85,8 @@ if __name__ == '__main__':
 
     print(raw_dataset)
 
-    metric = load_metric('wer')
+    wer_metric = load_metric('wer')
+    cer_metric = load_metric('cer')
 
     processor_with_lm = build_decoder(asr_processor,
                                     KENLM_MODEL_LOC,
@@ -110,18 +111,18 @@ if __name__ == '__main__':
         # true_text = val_df.loc[sample_number, 'transcript']
         # sample_loc = SPGI_VAL_DIR + sample_name
 
-        arr = raw_dataset['audio']['array']
-        true_text = raw_dataset['sentence']
+        arr = raw_dataset[idx]['audio']['array']
+        true_text = raw_dataset[idx]['sentence'].lower()
 
         inputs = {
-            'return_tensors': "pt",
-            'sampling_rate': raw_dataset[idx]['audio']['sampling_rate']
+        'return_tensors': "pt",
+        'sampling_rate': raw_dataset[idx]['audio']['sampling_rate']
         }
 
         with torch.no_grad():
             inputs = processor_with_lm(arr, **inputs)
-            logits = asr_model(**inputs).logits.to(device)
-            # logits = asr_model(**asr_processor(arr, **inputs)).logits.to(device)
+        logits = asr_model(**inputs).logits.to(device)
+        # logits = asr_model(**asr_processor(arr, **inputs)).logits.to(device)
         print(logits.shape)
 
         transcription_no_lm = greedy_decode(logits[0].cpu().numpy(), sorted_vocab_dict, ignore_set={'_', '[pad]', '<s>', '</s>'})
@@ -132,7 +133,13 @@ if __name__ == '__main__':
         print(f'Transcription LM: {transcription_lm}')
         print(f'Transcription NO-LM: {transcription_no_lm}')
         print(f'True text: {true_text}')
-        wer_lm = metric.compute(predictions=transcription_lm, references=[true_text])
-        wer_no_lm = metric.compute(predictions=[transcription_no_lm], references=[true_text])
+
+        wer_lm = wer_metric.compute(predictions=transcription_lm, references=[true_text])
+        wer_no_lm = wer_metric.compute(predictions=[transcription_no_lm], references=[true_text])
         print(f'LM WER: {wer_lm}')
         print(f'NO-LM WER: {wer_no_lm}')
+
+        cer_lm = cer_metric.compute(predictions=transcription_lm, references=[true_text])
+        cer_no_lm = cer_metric.compute(predictions=[transcription_no_lm], references=[true_text])
+        print(f'LM CER: {cer_lm}')
+        print(f'NO-LM CER: {cer_no_lm}')
