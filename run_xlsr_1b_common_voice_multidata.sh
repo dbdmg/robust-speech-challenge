@@ -2,11 +2,11 @@
 
 python run_speech_recognition_ctc_bnb_multidata.py \
 	--dataset_name "mozilla-foundation/common_voice_7_0" "multilingual_librispeech" \
-	--model_name_or_path="facebook/wav2vec2-xls-r-300m" \
+	--model_name_or_path="facebook/wav2vec2-xls-r-1b" \
 	--dataset_config_name="it" \
-	--output_dir="../wav2vec2-xls-r-300m-italian-multidata" \
+	--output_dir="../outputs/wav2vec2-xls-r-1b-italian-cv-ls" \
 	--overwrite_output_dir \
-	--num_train_epochs="8" \
+	--num_train_epochs="10" \
 	--per_device_train_batch_size="32" \
 	--per_device_eval_batch_size="32" \
 	--learning_rate="3e-4" \
@@ -25,9 +25,9 @@ python run_speech_recognition_ctc_bnb_multidata.py \
 	--group_by_length \
 	--push_to_hub \
     --use_auth_token \
-	--hub_model_id="dbdmg/wav2vec2-xls-r-300m-italian-augmented_multidata" \
+	--hub_model_id="dbdmg/wav2vec2-xls-r-1b-italian-augmented-cv-ls" \
     --data_augmentation \
-    --noise_root_path="/workspace/helper_data/UrbanSound8K/audio/" \
+    --noise_root_path="/workspace/datasets/UrbanSound8K/audio/" \
     --dataloader_num_workers="16" \
     --ctc_zero_infinity \
     --dataloader_pin_memory \
