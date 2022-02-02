@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
         with torch.no_grad():
             inputs = processor_with_lm(arr, **inputs)
-        logits = asr_model(**inputs).logits.to(device)
+            logits = asr_model(**inputs).logits.to(device)
         # logits = asr_model(**asr_processor(arr, **inputs)).logits.to(device)
         print(logits.shape)
 
