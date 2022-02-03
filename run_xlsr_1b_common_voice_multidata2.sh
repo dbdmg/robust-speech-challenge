@@ -1,7 +1,7 @@
 #!/bin/bash
 
 python run_speech_recognition_ctc_bnb_multidata2.py \
-	--dataset_name "mozilla-foundation/common_voice_7_0" "multilingual_librispeech" "ted"\
+	--dataset_name "mozilla-foundation/common_voice_7_0" "multilingual_librispeech" "ted" "voxforge" "m_ailabs" "europarl" "emovo" "mspka"\
 	--model_name_or_path="facebook/wav2vec2-xls-r-1b" \
 	--dataset_config_name="it" \
 	--output_dir="../outputs/wav2vec2-xls-r-1b-italian-multids" \

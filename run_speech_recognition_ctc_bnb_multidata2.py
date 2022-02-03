@@ -463,8 +463,7 @@ def main():
                 split=data_args.train_split_name,
                 use_auth_token=data_args.use_auth_token,
             )
-            
-            
+                       
             raw_datasets_1 = raw_datasets_1.remove_columns(['client_id', 'path', 'up_votes', 'down_votes', 'age', 'gender', 'accent', 'locale', 'segment'])
             dataset_sampling_rate = next(iter(raw_datasets_1.values())).features[data_args.audio_column_name].sampling_rate
             if dataset_sampling_rate != feature_extractor.sampling_rate:
@@ -480,6 +479,7 @@ def main():
                 )
             raw_datasets["train"] = raw_datasets_1["train"]
 
+            
         if "multilingual_librispeech" in data_args.dataset_name:
             raw_datasets_2["train"] = load_dataset(
                 "multilingual_librispeech",
@@ -498,7 +498,6 @@ def main():
                     data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
                 )
             
-            
             if data_args.text_column_name not in raw_datasets_2["train"].column_names:
                 raise ValueError(
                     f"--text_column_name {data_args.text_column_name} not found in dataset '{data_args.dataset_name}'. "
@@ -510,6 +509,7 @@ def main():
             else:
                 raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_2["train"]])
 
+                
         if "ted" in data_args.dataset_name:
             df = pd.read_csv("../datasets/ted.csv")
             
@@ -523,15 +523,113 @@ def main():
             raw_dataset = Dataset.from_pandas(df)
             
             raw_datasets_3 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
-            
-                
+                            
             if len(raw_datasets)==0:
                 raw_datasets["train"] = raw_datasets_3
             else:
                 raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_3])
-            
-            
 
+        
+        if "voxforge" in data_args.dataset_name:
+            df = pd.read_csv("../datasets/voxforge.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append("../datasets/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_4 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_4
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_4])
+
+                
+        if "m_ailabs" in data_args.dataset_name:
+            df = pd.read_csv("../datasets/m_ailabs.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append("../datasets/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_5 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_5
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_5])
+
+                
+        if "europarl" in data_args.dataset_name:
+            df = pd.read_csv("../datasets/europarl.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append("../datasets/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_6 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_6
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_6])
+
+                
+        if "emovo" in data_args.dataset_name:
+            df = pd.read_csv("../datasets/emovo.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append("../datasets/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_7 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_7
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_7])
+
+                
+        if "mspka" in data_args.dataset_name:
+            df = pd.read_csv("../datasets/mspka.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append("../datasets/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_8 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_8
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_8])
+
+                
         if data_args.max_train_samples is not None:
             raw_datasets["train"] = raw_datasets["train"].select(range(data_args.max_train_samples))
 
