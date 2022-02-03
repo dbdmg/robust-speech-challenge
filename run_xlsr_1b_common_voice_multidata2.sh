@@ -1,0 +1,36 @@
+#!/bin/bash
+
+python run_speech_recognition_ctc_bnb_multidata2.py \
+	--dataset_name "mozilla-foundation/common_voice_7_0" "multilingual_librispeech" "ted"\
+	--model_name_or_path="facebook/wav2vec2-xls-r-1b" \
+	--dataset_config_name="it" \
+	--output_dir="../outputs/wav2vec2-xls-r-1b-italian-multids" \
+	--overwrite_output_dir \
+	--num_train_epochs="10" \
+	--per_device_train_batch_size="32" \
+	--per_device_eval_batch_size="16" \
+	--learning_rate="5e-5" \
+	--warmup_steps="500" \
+	--evaluation_strategy="steps" \
+	--text_column_name="sentence" \
+	--length_column_name="input_length" \
+	--save_steps="400" \
+	--eval_steps="400" \
+	--layerdrop="0.0" \
+	--save_total_limit="3" \
+	--freeze_feature_encoder \
+	--gradient_checkpointing \
+	--chars_to_ignore , ? . ! - \; \: \" “ % ‘ ” � \
+	--fp16 \
+	--group_by_length \
+	--push_to_hub \
+    --use_auth_token \
+	--hub_model_id="dbdmg/wav2vec2-xls-r-1b-italian-augmented-multids" \
+    --data_augmentation \
+    --noise_root_path="/workspace/datasets/UrbanSound8K/audio/" \
+    --dataloader_num_workers="16" \
+    --ctc_zero_infinity \
+    --dataloader_pin_memory \
+	--do_train --do_eval \
+    --eval_split_name="validation" \
+    --train_split_name="train"
