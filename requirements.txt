@@ -19,6 +19,7 @@ pysrt
 # deep deep learning
 transformers
 datasets>=1.18.3
+jiwer
 
 # pyctcdecode
 pypi-kenlm
