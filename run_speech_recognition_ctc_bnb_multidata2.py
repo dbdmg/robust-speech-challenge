@@ -663,6 +663,17 @@ def main():
         if data_args.max_eval_samples is not None:
             raw_datasets["eval"] = raw_datasets["eval"].select(range(data_args.max_eval_samples))
 
+
+	def normalize_transcript(batch):
+        batch[text_column_name] = normalize_string(batch[text_column_name])
+        return batch
+
+    with training_args.main_process_first(desc="dataset map normalize strings"):
+        raw_datasets = raw_datasets.map(
+            normalize_transcript,
+            desc="normalize string",
+        )
+
     # 2. We remove some special characters from the datasets
     # that make training complicated and do not help in transcribing the speech
     # E.g. characters, such as `,` and `.` do not really have an acoustic characteristic
