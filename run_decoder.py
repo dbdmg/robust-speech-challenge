@@ -146,7 +146,8 @@ if __name__ == '__main__':
                                         remove_columns=remove_columns,
                                         batched=True,
                                         batch_size=BATCH_SIZE)
-    processed_dataset.set_format(type='torch', columns=['audio_attention_mask', 'input_values', 'sentence_attention_mask', 'input_ids'])
+    processed_dataset.set_format(type='torch',
+                                columns=['audio_attention_mask', 'input_values', 'sentence_attention_mask', 'input_ids'])
 
     loader = DataLoader(processed_dataset, batch_size=BATCH_SIZE)
 
