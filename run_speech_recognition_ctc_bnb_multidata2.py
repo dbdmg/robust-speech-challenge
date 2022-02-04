@@ -56,6 +56,7 @@ from transformers.utils.versions import require_version
 import torch
 from torch_audiomentations import Compose, AddBackgroundNoise, HighPassFilter, LowPassFilter
 import random
+from src.data.normalization import normalize_string
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
