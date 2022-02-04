@@ -15,6 +15,7 @@ torch
 git+https://github.com/MorenoLaQuatra/torch-audiomentations.git
 librosa
 pysrt
+num2words
 
 # deep deep learning
 transformers
