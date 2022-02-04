@@ -665,7 +665,7 @@ def main():
             raw_datasets["eval"] = raw_datasets["eval"].select(range(data_args.max_eval_samples))
 
 
-	def normalize_transcript(batch):
+    def normalize_transcript(batch):
         batch[text_column_name] = normalize_string(batch[text_column_name])
         return batch
 
