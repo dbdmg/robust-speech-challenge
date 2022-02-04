@@ -7,7 +7,7 @@ python run_speech_recognition_ctc_bnb_multidata2.py \
 	--output_dir="../outputs/wav2vec2-xls-r-1b-italian-multids" \
 	--overwrite_output_dir \
 	--num_train_epochs="10" \
-	--per_device_train_batch_size="32" \
+	--per_device_train_batch_size="16" \
 	--per_device_eval_batch_size="16" \
 	--learning_rate="5e-5" \
 	--warmup_steps="500" \
@@ -28,9 +28,11 @@ python run_speech_recognition_ctc_bnb_multidata2.py \
 	--hub_model_id="dbdmg/wav2vec2-xls-r-1b-italian-augmented-multids" \
     --data_augmentation \
     --noise_root_path="/workspace/datasets/UrbanSound8K/audio/" \
-    --dataloader_num_workers="16" \
+    --dataloader_num_workers="8" \
     --ctc_zero_infinity \
     --dataloader_pin_memory \
 	--do_train --do_eval \
-    --eval_split_name="validation" \
-    --train_split_name="train"
+    --eval_split_name="test" \
+    --train_split_name="train+validation" \
+    --datasets_root_path="../datasets/" \
+    --gradient_accumulation_steps="2"
