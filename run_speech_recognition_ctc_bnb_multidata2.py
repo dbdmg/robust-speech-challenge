@@ -664,8 +664,9 @@ def main():
         if data_args.max_eval_samples is not None:
             raw_datasets["eval"] = raw_datasets["eval"].select(range(data_args.max_eval_samples))
 
+    text_column_name = data_args.text_column_name
 
-	def normalize_transcript(batch):
+    def normalize_transcript(batch):
         batch[text_column_name] = normalize_string(batch[text_column_name])
         return batch
 
@@ -682,7 +683,6 @@ def main():
     chars_to_ignore_regex = (
         f'[{"".join(data_args.chars_to_ignore)}]' if data_args.chars_to_ignore is not None else None
     )
-    text_column_name = data_args.text_column_name
 
     def remove_special_characters(batch):
         if chars_to_ignore_regex is not None:
