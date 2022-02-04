@@ -164,7 +164,6 @@ def grid_search_decoder(asr_processor: Wav2Vec2Processor,
         metric = {
             metric.name: metric
         }
-    print(f'Metric dict: {metric}')
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     asr_model = asr_model.to(device)
