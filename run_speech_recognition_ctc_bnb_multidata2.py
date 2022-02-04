@@ -284,6 +284,13 @@ class DataTrainingArguments:
         }
     )
 
+    datasets_root_path: Optional[str] = field(
+        default="",
+        metadata={
+            "help": "The root folder containing both csv and audio for additional datasets (e.g., ted)."
+        }
+    )
+
 @dataclass
 class DataCollatorCTCWithPadding:
     """
@@ -512,11 +519,11 @@ def main():
 
                 
         if "ted" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/ted.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/ted.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
@@ -536,7 +543,7 @@ def main():
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
@@ -556,7 +563,7 @@ def main():
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
@@ -576,7 +583,7 @@ def main():
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
@@ -596,7 +603,7 @@ def main():
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
@@ -612,11 +619,11 @@ def main():
 
                 
         if "mspka" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/mspka.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/mspka.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
-                new_path.append("../datasets/" + p)
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
             del df["audio_path"]
             df["audio_path"] = new_path
 
