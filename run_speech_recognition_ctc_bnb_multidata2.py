@@ -539,7 +539,7 @@ def main():
 
         
         if "voxforge" in data_args.dataset_name:
-            df = pd.read_csv("../vox_forge.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/vox_forge.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -559,7 +559,7 @@ def main():
 
                 
         if "m_ailabs" in data_args.dataset_name:
-            df = pd.read_csv("../m_ailabs.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/m_ailabs.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -579,7 +579,7 @@ def main():
 
                 
         if "europarl" in data_args.dataset_name:
-            df = pd.read_csv("../euro_parl.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/euro_parl.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -599,7 +599,7 @@ def main():
 
                 
         if "emovo" in data_args.dataset_name:
-            df = pd.read_csv("../emovo.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/emovo.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -693,7 +693,8 @@ def main():
 
     def remove_special_characters(batch):
         if chars_to_ignore_regex is not None:
-            batch["target_text"] = re.sub(chars_to_ignore_regex, "", batch[text_column_name]).lower() + " "
+            batch["target_text"] = re.sub(chars_to_ignore_regex, " ", batch[text_column_name]).lower() + " "
+            batch["target_text"] = re.sub("  ", " ", batch["target_text"]) + " "
         else:
             batch["target_text"] = batch[text_column_name].lower() + " "
         return batch
@@ -883,7 +884,7 @@ def main():
     )
 
     def augment_data(sample):
-        sampling_rate = 16_000 # hardcoded because cannot access sample["sampling_rate"] -> TODO: resolve
+        sampling_rate = feature_extractor.sampling_rate
         augmented = augment_sample(np.asarray(sample["input_values"]), augmentation_pipeline=augmentation_pipeline, sampling_rate=sampling_rate)
         inputs = feature_extractor(augmented, sampling_rate=sampling_rate)
         item = {
