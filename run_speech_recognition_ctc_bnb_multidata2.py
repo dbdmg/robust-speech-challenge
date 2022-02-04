@@ -532,7 +532,7 @@ def main():
 
         
         if "voxforge" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/voxforge.csv")
+            df = pd.read_csv("../vox_forge.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -552,7 +552,7 @@ def main():
 
                 
         if "m_ailabs" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/m_ailabs.csv")
+            df = pd.read_csv("../m_ailabs.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -572,7 +572,7 @@ def main():
 
                 
         if "europarl" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/europarl.csv")
+            df = pd.read_csv("../euro_parl.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -592,7 +592,7 @@ def main():
 
                 
         if "emovo" in data_args.dataset_name:
-            df = pd.read_csv("../datasets/emovo.csv")
+            df = pd.read_csv("../emovo.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
