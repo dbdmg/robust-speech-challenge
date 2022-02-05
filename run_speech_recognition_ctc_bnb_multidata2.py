@@ -519,7 +519,7 @@ def main():
 
                 
         if "ted" in data_args.dataset_name:
-            df = pd.read_csv("../ted.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/ted.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -539,7 +539,7 @@ def main():
 
         
         if "voxforge" in data_args.dataset_name:
-            df = pd.read_csv("../vox_forge.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/vox_forge.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -559,7 +559,7 @@ def main():
 
                 
         if "m_ailabs" in data_args.dataset_name:
-            df = pd.read_csv("../m_ailabs.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/m_ailabs.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -579,7 +579,7 @@ def main():
 
                 
         if "europarl" in data_args.dataset_name:
-            df = pd.read_csv("../euro_parl.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/euro_parl.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -599,7 +599,7 @@ def main():
 
                 
         if "emovo" in data_args.dataset_name:
-            df = pd.read_csv("../emovo.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/emovo.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -619,7 +619,7 @@ def main():
 
                 
         if "mspka" in data_args.dataset_name:
-            df = pd.read_csv("../mspka.csv")
+            df = pd.read_csv(f"{data_args.datasets_root_path}/mspka.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
