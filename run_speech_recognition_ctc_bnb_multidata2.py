@@ -519,7 +519,7 @@ def main():
 
                 
         if "ted" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/ted.csv")
+            df = pd.read_csv("../ted.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -539,7 +539,7 @@ def main():
 
         
         if "voxforge" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/vox_forge.csv")
+            df = pd.read_csv("../vox_forge.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -559,7 +559,7 @@ def main():
 
                 
         if "m_ailabs" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/m_ailabs.csv")
+            df = pd.read_csv("../m_ailabs.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -579,7 +579,7 @@ def main():
 
                 
         if "europarl" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/euro_parl.csv")
+            df = pd.read_csv("../euro_parl.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -599,7 +599,7 @@ def main():
 
                 
         if "emovo" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/emovo.csv")
+            df = pd.read_csv("../emovo.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -619,7 +619,7 @@ def main():
 
                 
         if "mspka" in data_args.dataset_name:
-            df = pd.read_csv(f"{data_args.datasets_root_path}/mspka.csv")
+            df = pd.read_csv("../mspka.csv")
             
             new_path = []
             for p in list(df["audio_path"]):
@@ -704,6 +704,21 @@ def main():
             remove_special_characters,
             remove_columns=[text_column_name],
             desc="remove special characters from datasets",
+        )
+        
+    # clean text with unwanted characters
+    set_characters = set()
+    for string in raw_datasets["train"]["target_text"]:
+        set_characters.update(string.lower())
+
+    vocab = [character for character in "aàbcdeéèfghiíjklmnoóòpqrstuúvwxyz'-"]
+    unwanted_chars = set_characters - set(vocab) - set([' '])
+
+    with training_args.main_process_first(desc="dataset filter non vocab chars"):
+        raw_datasets = raw_datasets.filter(
+            lambda example: not any((c in unwanted_chars) for c in example),
+            input_columns="target_text", 
+            desc="remove examples with weird characters"
         )
 
     # save special tokens for tokenizer
