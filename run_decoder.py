@@ -2,19 +2,27 @@ import kenlm
 import argparse
 import pandas as pd
 import numpy as np
-import random
 import torch
 import os
+import pickle as pkl
 import datasets
 
 from pathlib import Path
+from sklearn.model_selection import ParameterGrid
 
 from datasets import load_metric, load_dataset
-from pyctcdecode import build_ctcdecoder
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, Wav2Vec2ProcessorWithLM
+from datasets import Dataset, DatasetDict, Metric, IterableDatasetDict, IterableDataset
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, Wav2Vec2ProcessorWithLM, PreTrainedTokenizer
+
+from pyctcdecode import build_ctcdecoder, BeamSearchDecoderCTC
+from pyctcdecode.language_model import load_unigram_set_from_arpa, LanguageModel, AbstractLanguageModel
+from pyctcdecode.alphabet import Alphabet, verify_alphabet_coverage
 
 from pathlib import Path
-from typing import Union, Dict, List, Tuple
+from torch.utils.data import DataLoader
+from collections import defaultdict
+from typing import Union, Dict, List, Tuple, Optional, Collection
+from functools import partial
 from src.decoding.decode import build_decoder, grid_search_decoder
 
 def parse_args():
@@ -29,7 +37,8 @@ def parse_args():
     parser.add_argument("--train_split_name", type=str, help="The name of the training data set split to use (via the datasets library).", required=True)
     parser.add_argument("--use_auth_token", help="If :obj:`True`, will use the token generated when running"
             ":obj:`transformers-cli login` as HTTP bearer authorization for remote files.", required=False, default=False, action='store_true')
-    
+    parser.add_argument('--batch_size', help="Batch size", type=int, required=True)
+    parser.add_argument('--export_path', help="Path to save the resulting dictionary", type=str, required=True)
     
     return parser.parse_args()
 
@@ -47,6 +56,31 @@ def greedy_decode(logits, labels, ignore_set=None):
         prev_c = c
     return "".join(out)
 
+def tokenize(sample, tokenizer, feature_extractor):
+    if isinstance(sample, datasets.arrow_dataset.Batch):
+        sentence_inputs = [s.lower() for s in sample['sentence']]
+        audio_inputs = [s['array'] for s in sample['audio']]
+        sampling_rate = sample['audio'][0]['sampling_rate']
+    else:
+        sentence_inputs = sample['sentence'].lower()
+        audio_inputs = sample['audio']['array']
+        sampling_rate = sample['audio']['sampling_rate']
+
+    
+    if tokenizer:
+        token = tokenizer(sentence_inputs,
+                        padding='longest')
+        token['sentence_attention_mask'] = token.pop('attention_mask')
+    else:
+        token = {}
+
+    audio = feature_extractor(audio_inputs,
+                                sampling_rate=sampling_rate,
+                                padding='longest')
+    audio['audio_attention_mask'] = audio.pop('attention_mask')
+    
+    return dict(**audio, **token)
+
 if __name__ == '__main__':
     args = parse_args()
     
@@ -58,6 +92,13 @@ if __name__ == '__main__':
     DATASET_CONFIG_NAME = args.dataset_config_name
     TRAIN_SPLIT_NAME = args.train_split_name
     USE_AUTH_TOKEN = args.use_auth_token
+    BATCH_SIZE = args.batch_size
+    EXPORT_PATH = args.export_path
+
+    alpha_beta_gen = ParameterGrid({
+        'alpha': [0.5, 0.6, 0.7, 0.8],
+        'beta': [1.0, 2.0, 3.0, 4.0]
+    })
     
     # val_df = pd.read_csv(SPGI_VAL_CSV, sep='|')
     
@@ -67,9 +108,9 @@ if __name__ == '__main__':
     # transcript      object
     # dtype: object
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
+
     asr_processor = Wav2Vec2Processor.from_pretrained(MODEL_NAME)
-    asr_model = Wav2Vec2ForCTC.from_pretrained(MODEL_NAME)
+    asr_model = Wav2Vec2ForCTC.from_pretrained(MODEL_NAME).to(device)
     print("Vocab: ", asr_processor.tokenizer.get_vocab())
     print(f'Vocab shape: {asr_processor.tokenizer.get_vocab()}')
     print(f'Loading dataset: {DATASET_NAME} - config: {DATASET_CONFIG_NAME}')
@@ -83,17 +124,6 @@ if __name__ == '__main__':
         use_auth_token=USE_AUTH_TOKEN
     )
 
-    print(raw_dataset)
-
-    wer_metric = load_metric('wer')
-    cer_metric = load_metric('cer')
-
-    processor_with_lm = build_decoder(asr_processor,
-                                    KENLM_MODEL_LOC,
-                                    alpha=.6,
-                                    beta=2.0,
-                                    return_decoder=False)
-
     feature_extractor = asr_processor.feature_extractor
     dataset_sampling_rate = raw_dataset[0]['audio']['sampling_rate']
     if dataset_sampling_rate != feature_extractor.sampling_rate:
@@ -101,45 +131,32 @@ if __name__ == '__main__':
             'audio', datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
         )
 
-    vocab_dict = asr_processor.tokenizer.get_vocab().copy()
-    sorted_vocab_dict = {k.lower(): v for k, v in sorted(vocab_dict.items(), key=lambda item: item[1])}
+    # vocab_dict = asr_processor.tokenizer.get_vocab().copy()
+    # sorted_vocab_dict = {k.lower(): v for k, v in sorted(vocab_dict.items(), key=lambda item: item[1])}
 
-    for idx in range(5):
-        # select random sample
-        # sample_number = random.randint(0, len(val_df))
-        # sample_name = val_df.loc[sample_number, "wav_filename"]
-        # true_text = val_df.loc[sample_number, 'transcript']
-        # sample_loc = SPGI_VAL_DIR + sample_name
+    remove_columns = [
+        'accent','age', 'path', 'client_id',
+        'down_votes', 'up_votes', 'gender',
+        'locale', 'segment', 'audio', 'sentence'
+    ]
 
-        arr = raw_dataset[idx]['audio']['array']
-        true_text = raw_dataset[idx]['sentence'].lower()
+    processed_dataset = raw_dataset.map(partial(tokenize,
+                                                tokenizer=asr_processor.tokenizer,
+                                                feature_extractor=asr_processor.feature_extractor),
+                                        remove_columns=remove_columns,
+                                        batched=True,
+                                        batch_size=BATCH_SIZE)
+    processed_dataset.set_format(type='torch',
+                                columns=['audio_attention_mask', 'input_values', 'sentence_attention_mask', 'input_ids'])
 
-        inputs = {
-        'return_tensors': "pt",
-        'sampling_rate': raw_dataset[idx]['audio']['sampling_rate']
-        }
+    loader = DataLoader(processed_dataset, batch_size=BATCH_SIZE)
 
-        with torch.no_grad():
-            inputs = processor_with_lm(arr, **inputs)
-            logits = asr_model(**inputs).logits.to(device)
-        # logits = asr_model(**asr_processor(arr, **inputs)).logits.to(device)
-        print(logits.shape)
+    result_dict = grid_search_decoder(asr_processor,
+                                        asr_model,
+                                        KENLM_MODEL_LOC,
+                                        alpha_beta_gen,
+                                        loader,
+                                        store_all_results=False)
 
-        transcription_no_lm = greedy_decode(logits[0].cpu().numpy(), sorted_vocab_dict, ignore_set={'_', '[pad]', '<s>', '</s>'})
-        transcription_no_lm = ("".join(c for c in transcription_no_lm if c not in ["_", '^', '$'])).replace('|', ' ')
-
-        print('_' * 60)
-        transcription_lm = processor_with_lm.batch_decode(logits.cpu().numpy()).text
-        print(f'Transcription LM: {transcription_lm}')
-        print(f'Transcription NO-LM: {transcription_no_lm}')
-        print(f'True text: {true_text}')
-
-        wer_lm = wer_metric.compute(predictions=transcription_lm, references=[true_text])
-        wer_no_lm = wer_metric.compute(predictions=[transcription_no_lm], references=[true_text])
-        print(f'LM WER: {wer_lm}')
-        print(f'NO-LM WER: {wer_no_lm}')
-
-        cer_lm = cer_metric.compute(predictions=transcription_lm, references=[true_text])
-        cer_no_lm = cer_metric.compute(predictions=[transcription_no_lm], references=[true_text])
-        print(f'LM CER: {cer_lm}')
-        print(f'NO-LM CER: {cer_no_lm}')
+    with open(EXPORT_PATH, 'wb') as fp:
+        pkl.dump(result_dict, fp)
