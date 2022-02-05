@@ -31,8 +31,9 @@ from typing import Dict, List, Optional, Union
 
 import datasets
 import numpy as np
+import pandas as pd
 import torch
-from datasets import DatasetDict, load_dataset, load_metric
+from datasets import DatasetDict, load_dataset, load_metric, concatenate_datasets, Dataset
 
 import bitsandbytes as bnb
 import transformers
@@ -55,6 +56,7 @@ from transformers.utils.versions import require_version
 import torch
 from torch_audiomentations import Compose, AddBackgroundNoise, HighPassFilter, LowPassFilter
 import random
+from src.data.normalization import normalize_string
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -167,7 +169,8 @@ class DataTrainingArguments:
     the command line.
     """
 
-    dataset_name: str = field(
+    dataset_name: List[str] = list_field(
+        default=None,
         metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
     dataset_config_name: str = field(
@@ -278,6 +281,13 @@ class DataTrainingArguments:
         default="",
         metadata={
             "help": "The root folder containing background noise signals."
+        }
+    )
+
+    datasets_root_path: Optional[str] = field(
+        default="",
+        metadata={
+            "help": "The root folder containing both csv and audio for additional datasets (e.g., ted)."
         }
     )
 
@@ -434,42 +444,242 @@ def main():
 
     # 1. First, let's load the dataset
     raw_datasets = DatasetDict()
-
+    raw_datasets_1 = DatasetDict()
+    raw_datasets_2 = DatasetDict()
+    
     if training_args.do_train:
+        '''
         raw_datasets["train"] = load_dataset(
-            data_args.dataset_name,
+            "mozilla-foundation/common_voice_7_0",
             data_args.dataset_config_name,
             split=data_args.train_split_name,
             use_auth_token=data_args.use_auth_token,
         )
-
-        if data_args.audio_column_name not in raw_datasets["train"].column_names:
-            raise ValueError(
-                f"--audio_column_name '{data_args.audio_column_name}' not found in dataset '{data_args.dataset_name}'. "
-                "Make sure to set `--audio_column_name` to the correct audio column - one of "
-                f"{', '.join(raw_datasets['train'].column_names)}."
+        '''
+        # Anticipated to perform the cast to Audio and resampling before concatenation
+        feature_extractor = AutoFeatureExtractor.from_pretrained(
+            model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
+        )
+        
+        if "mozilla-foundation/common_voice_7_0" in data_args.dataset_name:
+            raw_datasets_1["train"] = load_dataset(
+                "mozilla-foundation/common_voice_7_0",
+                "it",
+                #split=f"{data_args.train_split_name}[:1%]",
+                split=data_args.train_split_name,
+                use_auth_token=data_args.use_auth_token,
             )
+                       
+            raw_datasets_1 = raw_datasets_1.remove_columns(['client_id', 'path', 'up_votes', 'down_votes', 'age', 'gender', 'accent', 'locale', 'segment'])
+            dataset_sampling_rate = next(iter(raw_datasets_1.values())).features[data_args.audio_column_name].sampling_rate
+            if dataset_sampling_rate != feature_extractor.sampling_rate:
+                raw_datasets_1 = raw_datasets_1.cast_column(
+                    data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+                )
 
-        if data_args.text_column_name not in raw_datasets["train"].column_names:
-            raise ValueError(
-                f"--text_column_name {data_args.text_column_name} not found in dataset '{data_args.dataset_name}'. "
-                "Make sure to set `--text_column_name` to the correct text column - one of "
-                f"{', '.join(raw_datasets['train'].column_names)}."
+            if data_args.audio_column_name not in raw_datasets_1["train"].column_names:
+                raise ValueError(
+                    f"--audio_column_name '{data_args.audio_column_name}' not found in one of datasets '{data_args.dataset_name}'. "
+                    "Make sure to set `--audio_column_name` to the correct audio column - one of "
+                    f"{', '.join(raw_datasets_1['train'].column_names)}."
+                )
+            raw_datasets["train"] = raw_datasets_1["train"]
+
+            
+        if "multilingual_librispeech" in data_args.dataset_name:
+            raw_datasets_2["train"] = load_dataset(
+                "multilingual_librispeech",
+                "italian",
+                #split=f"{data_args.train_split_name}[:1%]",
+                split=data_args.train_split_name,
+                use_auth_token=data_args.use_auth_token,
             )
+            raw_datasets_2 = raw_datasets_2.rename_column("text", "sentence")
+            raw_datasets_2 = raw_datasets_2.remove_columns(['file', 'speaker_id', 'chapter_id', 'id'])
+        
+            
+            dataset_sampling_rate = next(iter(raw_datasets_2.values())).features[data_args.audio_column_name].sampling_rate
+            if dataset_sampling_rate != feature_extractor.sampling_rate:
+                raw_datasets_2 = raw_datasets_2.cast_column(
+                    data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+                )
+            
+            if data_args.text_column_name not in raw_datasets_2["train"].column_names:
+                raise ValueError(
+                    f"--text_column_name {data_args.text_column_name} not found in dataset '{data_args.dataset_name}'. "
+                    "Make sure to set `--text_column_name` to the correct text column - one of "
+                    f"{', '.join(raw_datasets_2['train'].column_names)}."
+                )
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_2["train"]
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_2["train"]])
 
+                
+        if "ted" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/ted.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_3 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_3
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_3])
+
+        
+        if "voxforge" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/vox_forge.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_4 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_4
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_4])
+
+                
+        if "m_ailabs" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/m_ailabs.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_5 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_5
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_5])
+
+                
+        if "europarl" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/euro_parl.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_6 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_6
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_6])
+
+                
+        if "emovo" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/emovo.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_7 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_7
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_7])
+
+                
+        if "mspka" in data_args.dataset_name:
+            df = pd.read_csv(f"{data_args.datasets_root_path}/mspka.csv")
+            
+            new_path = []
+            for p in list(df["audio_path"]):
+                new_path.append(f"{data_args.datasets_root_path}/" + p)
+            del df["audio_path"]
+            df["audio_path"] = new_path
+
+            df.columns = ["sentence", "audio"]
+            raw_dataset = Dataset.from_pandas(df)
+            
+            raw_datasets_8 = raw_dataset.cast_column(data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate))
+                            
+            if len(raw_datasets)==0:
+                raw_datasets["train"] = raw_datasets_8
+            else:
+                raw_datasets["train"] = concatenate_datasets([raw_datasets["train"], raw_datasets_8])
+
+                
         if data_args.max_train_samples is not None:
             raw_datasets["train"] = raw_datasets["train"].select(range(data_args.max_train_samples))
 
     if training_args.do_eval:
-        raw_datasets["eval"] = load_dataset(
-            data_args.dataset_name,
+
+        #  TODO
+        raw_datasets_tmp = DatasetDict() 
+        # raw_datasets["eval"] = load_dataset(
+        #     "mozilla-foundation/common_voice_7_0",
+        #     data_args.dataset_config_name,
+        #     split=data_args.eval_split_name,
+        #     use_auth_token=data_args.use_auth_token,
+        # )
+        raw_datasets_tmp = DatasetDict()
+        raw_datasets_tmp["eval"] =  load_dataset(
+            "mozilla-foundation/common_voice_7_0",
             data_args.dataset_config_name,
+            #split=f"{data_args.eval_split_name}[:1%]",
             split=data_args.eval_split_name,
             use_auth_token=data_args.use_auth_token,
         )
 
+        raw_datasets_tmp = raw_datasets_tmp.remove_columns(['client_id', 'path', 'up_votes', 'down_votes', 'age', 'gender', 'accent', 'locale', 'segment'])
+        dataset_sampling_rate = next(iter(raw_datasets_tmp.values())).features[data_args.audio_column_name].sampling_rate
+        if dataset_sampling_rate != feature_extractor.sampling_rate:
+            raw_datasets_tmp = raw_datasets_tmp.cast_column(
+                data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+                )
+        raw_datasets["eval"] = raw_datasets_tmp["eval"]
+
         if data_args.max_eval_samples is not None:
             raw_datasets["eval"] = raw_datasets["eval"].select(range(data_args.max_eval_samples))
+
+    text_column_name = data_args.text_column_name
+
+    def normalize_transcript(batch):
+        batch[text_column_name] = normalize_string(batch[text_column_name])
+        return batch
+
+    with training_args.main_process_first(desc="dataset map normalize strings"):
+        raw_datasets = raw_datasets.map(
+            normalize_transcript,
+            desc="normalize string",
+        )
 
     # 2. We remove some special characters from the datasets
     # that make training complicated and do not help in transcribing the speech
@@ -478,11 +688,11 @@ def main():
     chars_to_ignore_regex = (
         f'[{"".join(data_args.chars_to_ignore)}]' if data_args.chars_to_ignore is not None else None
     )
-    text_column_name = data_args.text_column_name
 
     def remove_special_characters(batch):
         if chars_to_ignore_regex is not None:
-            batch["target_text"] = re.sub(chars_to_ignore_regex, "", batch[text_column_name]).lower() + " "
+            batch["target_text"] = re.sub(chars_to_ignore_regex, " ", batch[text_column_name]).lower() + " "
+            batch["target_text"] = re.sub("  ", " ", batch["target_text"]) + " "
         else:
             batch["target_text"] = batch[text_column_name].lower() + " "
         return batch
@@ -492,6 +702,21 @@ def main():
             remove_special_characters,
             remove_columns=[text_column_name],
             desc="remove special characters from datasets",
+        )
+        
+    # clean text with unwanted characters
+    set_characters = set()
+    for string in raw_datasets["train"]["target_text"]:
+        set_characters.update(string.lower())
+
+    vocab = [character for character in "aàbcdeéèfghiíjklmnoóòpqrstuúvwxyz'-"]
+    unwanted_chars = set_characters - set(vocab) - set([' '])
+
+    with training_args.main_process_first(desc="dataset filter non vocab chars"):
+        raw_datasets = raw_datasets.filter(
+            lambda example: not any((c in unwanted_chars) for c in example),
+            input_columns="target_text", 
+            desc="remove examples with weird characters"
         )
 
     # save special tokens for tokenizer
@@ -518,7 +743,6 @@ def main():
         tokenizer_name_or_path = training_args.output_dir
 
         vocab_file = os.path.join(tokenizer_name_or_path, "vocab.json")
-
         with training_args.main_process_first():
             if training_args.overwrite_output_dir and os.path.isfile(vocab_file):
                 os.remove(vocab_file)
@@ -557,10 +781,14 @@ def main():
         use_auth_token=data_args.use_auth_token,
         **tokenizer_kwargs,
     )
+    
+    '''
+    # already created before datasets concatenation
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
     )
-
+    '''
+    
     # adapt config
     config.update(
         {
@@ -599,13 +827,16 @@ def main():
     # so that we just need to set the correct target sampling rate and normalize the input
     # via the `feature_extractor`
 
+    '''
+    # already applied before datasets concatenation
     # make sure that dataset decodes audio with correct sampling rate
     dataset_sampling_rate = next(iter(raw_datasets.values())).features[data_args.audio_column_name].sampling_rate
     if dataset_sampling_rate != feature_extractor.sampling_rate:
         raw_datasets = raw_datasets.cast_column(
             data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
         )
-
+    '''
+    
     # derive max & min input length for sample rate & max duration
     max_input_length = data_args.max_duration_in_seconds * feature_extractor.sampling_rate
     min_input_length = data_args.min_duration_in_seconds * feature_extractor.sampling_rate
@@ -666,13 +897,13 @@ def main():
     )
 
     def augment_data(sample):
-        sampling_rate = 16_000 # hardcoded because cannot access sample["sampling_rate"] -> TODO: resolve
+        sampling_rate = feature_extractor.sampling_rate
         augmented = augment_sample(np.asarray(sample["input_values"]), augmentation_pipeline=augmentation_pipeline, sampling_rate=sampling_rate)
         inputs = feature_extractor(augmented, sampling_rate=sampling_rate)
         item = {
             "input_values": inputs.input_values[0],
             "labels" : sample["labels"],
-            "input_length" : sample["input_values"][0]
+            "input_length" : [len(inputs.input_values[0][0])]
         }
         return item
 
