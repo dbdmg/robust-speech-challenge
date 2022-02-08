@@ -1,9 +1,11 @@
 #!/bin/bash
 
-model='dbdmg/wav2vec2-xls-r-300m-italian-augmented-multids'
 if [[ -z "$1" ]] ; then
-    model=$model-lm
+    model='dbdmg/wav2vec2-xls-r-300m-italian-augmented-multids'
+else
+    model='dbdmg/wav2vec2-xls-r-300m-italian-augmented-multids-lm'
 fi
+
 
 # echo $model
 python eval.py --model_id $model \
