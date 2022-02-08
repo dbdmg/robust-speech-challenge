@@ -4,9 +4,10 @@ import re
 from typing import Dict
 
 import torch
+from src.data.normalization import normalize_string
 from datasets import Audio, Dataset, load_dataset, load_metric
 
-from transformers import AutoFeatureExtractor, pipeline
+from transformers import AutoFeatureExtractor, pipeline, AutoTokenizer, Wav2Vec2ProcessorWithLM, Wav2Vec2ForCTC
 
 
 def log_results(result: Dataset, args: Dict[str, str]):
@@ -47,21 +48,15 @@ def log_results(result: Dataset, args: Dict[str, str]):
             result.map(write_to_file, with_indices=True)
 
 
-def normalize_text(text: str) -> str:
+def normalize_text(text: str, invalid_chars_regex: str, to_lower: bool) -> str:
     """DO ADAPT FOR YOUR USE CASE. this function normalizes the target text."""
 
-    chars_to_ignore_regex = '[,?.!\-\;\:"“%‘”�—’…–]'  # noqa: W605 IMPORTANT: this should correspond to the chars that were ignored during training
+    text = text.lower() if to_lower else text.upper()
 
-    text = re.sub(chars_to_ignore_regex, "", text.lower())
+    text = re.sub(invalid_chars_regex, " ", text)
+    text = re.sub("\s+", " ", text).strip()
 
-    # In addition, we can normalize the target text, e.g. removing new lines characters etc...
-    # note that order is important here!
-    token_sequences_to_ignore = ["\n\n", "\n", "   ", "  "]
-
-    for t in token_sequences_to_ignore:
-        text = " ".join(text.split(t))
-
-    return text
+    return normalize_string(text)
 
 
 def main(args):
@@ -71,6 +66,10 @@ def main(args):
     # for testing: only process the first two examples as a test
     # dataset = dataset.select(range(10))
 
+    if args.ctcdecode:
+        model = Wav2Vec2ForCTC.from_pretrained(args.model_id)
+        processor = Wav2Vec2ProcessorWithLM.from_pretrained(args.model_id)
+        
     # load processor
     feature_extractor = AutoFeatureExtractor.from_pretrained(args.model_id)
     sampling_rate = feature_extractor.sampling_rate
@@ -83,16 +82,46 @@ def main(args):
         args.device = 0 if torch.cuda.is_available() else -1
     asr = pipeline("automatic-speech-recognition", model=args.model_id, device=args.device)
 
+    
+    # build normalizer config
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
+    tokens = [x for x in tokenizer.convert_ids_to_tokens(range(0, tokenizer.vocab_size))]
+    special_tokens = [
+        tokenizer.pad_token, tokenizer.word_delimiter_token,
+        tokenizer.unk_token, tokenizer.bos_token,
+        tokenizer.eos_token,
+    ]
+    non_special_tokens = [x for x in tokens if x not in special_tokens]
+    invalid_chars_regex = f"[^\s{re.escape(''.join(set(non_special_tokens)))}]"
+    normalize_to_lower = False
+    for token in non_special_tokens:
+        if token.isalpha() and token.islower():
+            normalize_to_lower = True
+            break
+            
     # map function to decode audio
-    def map_to_pred(batch):
+    def map_to_pred(batch, args=args, asr=asr, invalid_chars_regex=invalid_chars_regex, normalize_to_lower=normalize_to_lower):
         prediction = asr(
             batch["audio"]["array"], chunk_length_s=args.chunk_length_s, stride_length_s=args.stride_length_s
         )
 
         batch["prediction"] = prediction["text"]
-        batch["target"] = normalize_text(batch["sentence"])
+        batch["target"] = normalize_text(batch["sentence"], invalid_chars_regex, normalize_to_lower)
         return batch
-
+    
+    
+    def map_and_decode(batch):
+        inputs = processor(batch["audio"]["array"], sampling_rate=batch["audio"]["sampling_rate"], return_tensors="pt")
+        with torch.no_grad():
+            logits = model(**inputs).logits
+        transcription = processor.batch_decode(logits.numpy()).text
+        batch["prediction"] = transcription
+        batch["target"] = normalize_text(batch["sentence"], invalid_chars_regex, normalize_to_lower)
+        return batch
+        
+        
+        
+#         transcription = .lower()
     # run inference on all examples
     result = dataset.map(map_to_pred, remove_columns=dataset.column_names)
 
@@ -125,6 +154,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--log_outputs", action="store_true", help="If defined, write outputs to log file for analysis."
+    )
+    parser.add_argument(
+        "--ctcdecode", action="store_true", help="Apply the ctc decoder to the output (only if present in the model card)."
     )
     parser.add_argument(
         "--device",
