@@ -50,13 +50,13 @@ def log_results(result: Dataset, args: Dict[str, str]):
 
 def normalize_text(text: str, invalid_chars_regex: str, to_lower: bool) -> str:
     """DO ADAPT FOR YOUR USE CASE. this function normalizes the target text."""
-
+    text = normalize_string(text)
     text = text.lower() if to_lower else text.upper()
 
     text = re.sub(invalid_chars_regex, " ", text)
     text = re.sub("\s+", " ", text).strip()
 
-    return normalize_string(text)
+    return text
 
 
 def main(args):
