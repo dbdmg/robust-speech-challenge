@@ -50,7 +50,7 @@ def greedy_decode(logits, labels, ignore_set=None):
     for n in logits.argmax(axis=1):
         c = label_dict.get(n, "")  # if not in labels, then assume it's ctc blank char
         if not ignore_set is None and c in ignore_set:
-          continue
+            continue
         if c != prev_c:
             out.append(c)
         prev_c = c
