@@ -7,6 +7,8 @@ from typing import Dict
 import torch
 from src.data.normalization import normalize_string
 from datasets import Audio, Dataset, load_dataset, load_metric
+import numpy as np
+import datasets
 
 from transformers import (
     AutoFeatureExtractor,
@@ -87,7 +89,6 @@ def main(args):
 
     # for testing: only process the first two examples as a test
     # dataset = dataset.select(range(10))
-
     
     if args.ctcdecode:
         processor = Wav2Vec2ProcessorWithLM.from_pretrained(args.model_id)
@@ -100,6 +101,13 @@ def main(args):
     # load processor
     feature_extractor = processor.feature_extractor
     sampling_rate = feature_extractor.sampling_rate
+    # dataset_sampling_rate = raw_dataset[0]['audio']['sampling_rate']
+    # if dataset_sampling_rate != feature_extractor.sampling_rate:
+    #     print("Resampling")
+    #     raw_dataset = raw_dataset.cast_column(
+    #         'audio', datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+    #     )
+
 
     # resample audio
     dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
@@ -111,18 +119,20 @@ def main(args):
     # build normalizer config
     tokenizer = AutoTokenizer.from_pretrained(args.model_id)
 
-    config = AutoConfig.from_pretrained(args.model_id)
+    # config = AutoConfig.from_pretrained(  args.model_id)
     model = AutoModelForCTC.from_pretrained(args.model_id)
+    model.eval()
+    model.to(args.device)
 
-    asr = pipeline(
-        "automatic-speech-recognition",
-        config=config,
-        model=model,
-        tokenizer=tokenizer,
-        feature_extractor=feature_extractor,
-        decoder=decoder,
-        device=args.device,
-    )
+    # asr = pipeline(
+    #     "automatic-speech-recognition",
+    #     config=config,
+    #     model=model,
+    #     tokenizer=tokenizer,
+    #     feature_extractor=feature_extractor,
+    #     decoder=decoder,
+    #     device=args.device,
+    # )
 
     tokens = [
         x for x in tokenizer.convert_ids_to_tokens(range(0, tokenizer.vocab_size))
@@ -141,53 +151,67 @@ def main(args):
         if token.isalpha() and token.islower():
             normalize_to_lower = True
             break
+
+    print("Normalize to lower", normalize_to_lower)
             
     # map function to decode audio
-    def map_to_pred(
-        batch,
-        args=args,
-        asr=asr,
-        invalid_chars_regex=invalid_chars_regex,
-        normalize_to_lower=normalize_to_lower,
-    ):
-        prediction = asr(
-            batch["audio"]["array"],
-            chunk_length_s=args.chunk_length_s,
-            stride_length_s=args.stride_length_s,
-        )
+    # def map_to_pred(
+    #     batch,
+    #     args=args,
+    #     asr=asr,
+    #     invalid_chars_regex=invalid_chars_regex,
+    #     normalize_to_lower=normalize_to_lower,
+    # ):
+    #     prediction = asr(
+    #         batch["audio"]["array"],
+    #         chunk_length_s=args.chunk_length_s,
+    #         stride_length_s=args.stride_length_s,
+    #     )
 
-        batch["prediction"] = prediction["text"]
-        batch["target"] = normalize_text(
-            batch["sentence"], invalid_chars_regex, normalize_to_lower
-        )
-        return batch
-
-    def map_and_decode(batch, processor=processor, args=args, invalid_chars_regex=invalid_chars_regex, normalize_to_lower=normalize_to_lower):     
+    #     batch["prediction"] = prediction["text"]
+    #     batch["target"] = normalize_text(
+    #         batch["sentence"], invalid_chars_regex, normalize_to_lower
+    #     )
+    #     return batch
+    
+    def map_and_decode(batch, processor=processor, args=args):
+        audio_inputs = [s['array'] for s in batch['audio']]
+        sampling_rate = batch['audio'][0]['sampling_rate']
         inputs = processor(
-            batch["audio"]["array"],
-            sampling_rate=batch["audio"]["sampling_rate"],
+            audio_inputs,
+            sampling_rate=sampling_rate,
             return_tensors="pt",
+            padding="longest"
         )
         
         inputs = {k: v.to(args.device) for k, v in inputs.items()}
-        
+
         with torch.no_grad():
-            logits = model(**inputs).logits
-        
+            logits = model(**inputs).logits.detach().cpu().numpy()
+
         if args.ctcdecode:
-            transcription = processor.batch_decode(logits.cpu().numpy(), beam_width=args.beam_width).text
+            transcription = processor.batch_decode(logits, beam_width=args.beam_width).text
         else:
-            transcription = processor.batch_decode(logits.argmax(-1).cpu().numpy())[0]
-        
+            transcription = processor.batch_decode(logits.argmax(-1))
+
         batch["prediction"] = transcription
-        batch["target"] = normalize_text(
-            batch["sentence"], invalid_chars_regex, normalize_to_lower
-        )
+        batch["target"] = [
+            normalize_text(s, invalid_chars_regex, normalize_to_lower) for s in batch["sentence"]
+        ]
         return batch
+
+    # dataset = dataset.select(list(range(64)))
+    result = dataset.map(
+        map_and_decode,
+        desc="Map and decode",
+        remove_columns=dataset.column_names,
+        batched=True,
+        batch_size=args.batch_size
+    )
 
     #         transcription = .lower()
     # run inference on all examples
-    result = dataset.map(map_and_decode, remove_columns=dataset.column_names)
+    # result = dataset.map(map_and_decode, remove_columns=dataset.column_names, batched=True, batch_size=args.batch_size)
 
     # compute and log_results
     # do not change function below
@@ -250,6 +274,11 @@ if __name__ == "__main__":
         "--beam_width",
         type=int,
         default=3,
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=16,
     )
     args = parser.parse_args()
 
