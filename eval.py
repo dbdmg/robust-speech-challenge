@@ -88,6 +88,7 @@ def main(args):
     # for testing: only process the first two examples as a test
     # dataset = dataset.select(range(10))
 
+    
     if args.ctcdecode:
         processor = Wav2Vec2ProcessorWithLM.from_pretrained(args.model_id)
         decoder = processor.decoder
@@ -95,7 +96,6 @@ def main(args):
         processor = Wav2Vec2Processor.from_pretrained(args.model_id)
         decoder = None
 
-    model = Wav2Vec2ForCTC.from_pretrained(args.model_id)
 
     # load processor
     feature_extractor = processor.feature_extractor
@@ -141,7 +141,7 @@ def main(args):
         if token.isalpha() and token.islower():
             normalize_to_lower = True
             break
-
+            
     # map function to decode audio
     def map_to_pred(
         batch,
@@ -162,16 +162,23 @@ def main(args):
         )
         return batch
 
-    def map_and_decode(batch):
-        """(deprecated) ?"""
+    def map_and_decode(batch, processor=processor, args=args, invalid_chars_regex=invalid_chars_regex, normalize_to_lower=normalize_to_lower):     
         inputs = processor(
             batch["audio"]["array"],
             sampling_rate=batch["audio"]["sampling_rate"],
             return_tensors="pt",
         )
+        
+        inputs = {k: v.to(args.device) for k, v in inputs.items()}
+        
         with torch.no_grad():
             logits = model(**inputs).logits
-        transcription = processor.batch_decode(logits.numpy()).text
+        
+        if args.ctcdecode:
+            transcription = processor.batch_decode(logits.cpu().numpy(), beam_width=args.beam_width).text
+        else:
+            transcription = processor.batch_decode(logits.argmax(-1).cpu().numpy())[0]
+        
         batch["prediction"] = transcription
         batch["target"] = normalize_text(
             batch["sentence"], invalid_chars_regex, normalize_to_lower
@@ -180,7 +187,7 @@ def main(args):
 
     #         transcription = .lower()
     # run inference on all examples
-    result = dataset.map(map_to_pred, remove_columns=dataset.column_names)
+    result = dataset.map(map_and_decode, remove_columns=dataset.column_names)
 
     # compute and log_results
     # do not change function below
@@ -238,6 +245,11 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
+    )
+    parser.add_argument(
+        "--beam_width",
+        type=int,
+        default=3,
     )
     args = parser.parse_args()
 
