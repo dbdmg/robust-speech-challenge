@@ -2,12 +2,21 @@
 import argparse
 import re
 from typing import Dict
+from sklearn import feature_extraction
 
 import torch
 from src.data.normalization import normalize_string
 from datasets import Audio, Dataset, load_dataset, load_metric
 
-from transformers import AutoFeatureExtractor, pipeline, AutoTokenizer, Wav2Vec2ProcessorWithLM, Wav2Vec2ForCTC
+from transformers import (
+    AutoFeatureExtractor,
+    pipeline,
+    AutoTokenizer,
+    Wav2Vec2Processor,
+    Wav2Vec2ProcessorWithLM,
+    Wav2Vec2ForCTC,
+    AutoConfig,
+)
 
 
 def log_results(result: Dataset, args: Dict[str, str]):
@@ -21,8 +30,12 @@ def log_results(result: Dataset, args: Dict[str, str]):
     cer = load_metric("cer")
 
     # compute metrics
-    wer_result = wer.compute(references=result["target"], predictions=result["prediction"])
-    cer_result = cer.compute(references=result["target"], predictions=result["prediction"])
+    wer_result = wer.compute(
+        references=result["target"], predictions=result["prediction"]
+    )
+    cer_result = cer.compute(
+        references=result["target"], predictions=result["prediction"]
+    )
 
     # print & log results
     result_str = f"WER: {wer_result}\n" f"CER: {cer_result}"
@@ -61,18 +74,30 @@ def normalize_text(text: str, invalid_chars_regex: str, to_lower: bool) -> str:
 
 def main(args):
     # load dataset
-    dataset = load_dataset(args.dataset, args.config, split=args.split, use_auth_token=True)
+    dataset = load_dataset(
+        args.dataset, args.config, split=args.split, use_auth_token=True
+    )
 
     # for testing: only process the first two examples as a test
     # dataset = dataset.select(range(10))
 
-    if args.ctcdecode:
-        model = Wav2Vec2ForCTC.from_pretrained(args.model_id)
-        processor = Wav2Vec2ProcessorWithLM.from_pretrained(args.model_id)
-        
     # load processor
-    feature_extractor = AutoFeatureExtractor.from_pretrained(args.model_id)
+    # feature_extractor = AutoFeatureExtractor.from_pretrained(args.model_id)
+    # sampling_rate = feature_extractor.sampling_rate
+
+    if args.ctcdecode:
+        processor = Wav2Vec2ProcessorWithLM.from_pretrained(args.model_id)
+        decoder = processor.decoder
+    else:
+        processor = Wav2Vec2Processor.from_pretrained(args.model_id)
+        decoder = None
+
+    feature_extractor = processor.feature_extractor
+    tokenizer = processor.tokenizer
     sampling_rate = feature_extractor.sampling_rate
+
+    config = AutoConfig.from_pretrained(args.model_id)
+    model = Wav2Vec2ForCTC.from_pretrained(args.model_id)
 
     # resample audio
     dataset = dataset.cast_column("audio", Audio(sampling_rate=sampling_rate))
@@ -80,15 +105,27 @@ def main(args):
     # load eval pipeline
     if args.device is None:
         args.device = 0 if torch.cuda.is_available() else -1
-    asr = pipeline("automatic-speech-recognition", model=args.model_id, device=args.device)
 
-    
+    asr = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        config=config,
+        feature_extractor=feature_extractor,
+        decoder=decoder,
+        tokenizer=tokenizer,
+        device=args.device,
+    )
+
     # build normalizer config
     tokenizer = AutoTokenizer.from_pretrained(args.model_id)
-    tokens = [x for x in tokenizer.convert_ids_to_tokens(range(0, tokenizer.vocab_size))]
+    tokens = [
+        x for x in tokenizer.convert_ids_to_tokens(range(0, tokenizer.vocab_size))
+    ]
     special_tokens = [
-        tokenizer.pad_token, tokenizer.word_delimiter_token,
-        tokenizer.unk_token, tokenizer.bos_token,
+        tokenizer.pad_token,
+        tokenizer.word_delimiter_token,
+        tokenizer.unk_token,
+        tokenizer.bos_token,
         tokenizer.eos_token,
     ]
     non_special_tokens = [x for x in tokens if x not in special_tokens]
@@ -98,30 +135,44 @@ def main(args):
         if token.isalpha() and token.islower():
             normalize_to_lower = True
             break
-            
+
     # map function to decode audio
-    def map_to_pred(batch, args=args, asr=asr, invalid_chars_regex=invalid_chars_regex, normalize_to_lower=normalize_to_lower):
+    def map_to_pred(
+        batch,
+        args=args,
+        asr=asr,
+        invalid_chars_regex=invalid_chars_regex,
+        normalize_to_lower=normalize_to_lower,
+    ):
         prediction = asr(
-            batch["audio"]["array"], chunk_length_s=args.chunk_length_s, stride_length_s=args.stride_length_s
+            batch["audio"]["array"],
+            chunk_length_s=args.chunk_length_s,
+            stride_length_s=args.stride_length_s,
+            #decoder_kwargs={"beam_width": args.beam_width},
         )
 
         batch["prediction"] = prediction["text"]
-        batch["target"] = normalize_text(batch["sentence"], invalid_chars_regex, normalize_to_lower)
+        batch["target"] = normalize_text(
+            batch["sentence"], invalid_chars_regex, normalize_to_lower
+        )
         return batch
-    
-    
+
     def map_and_decode(batch):
-        inputs = processor(batch["audio"]["array"], sampling_rate=batch["audio"]["sampling_rate"], return_tensors="pt")
+        inputs = processor(
+            batch["audio"]["array"],
+            sampling_rate=batch["audio"]["sampling_rate"],
+            return_tensors="pt",
+        )
         with torch.no_grad():
             logits = model(**inputs).logits
         transcription = processor.batch_decode(logits.numpy()).text
         batch["prediction"] = transcription
-        batch["target"] = normalize_text(batch["sentence"], invalid_chars_regex, normalize_to_lower)
+        batch["target"] = normalize_text(
+            batch["sentence"], invalid_chars_regex, normalize_to_lower
+        )
         return batch
-        
-        
-        
-#         transcription = .lower()
+
+    #         transcription = .lower()
     # run inference on all examples
     result = dataset.map(map_to_pred, remove_columns=dataset.column_names)
 
@@ -134,7 +185,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--model_id", type=str, required=True, help="Model identifier. Should be loadable with 🤗 Transformers"
+        "--model_id",
+        type=str,
+        required=True,
+        help="Model identifier. Should be loadable with 🤗 Transformers",
     )
     parser.add_argument(
         "--dataset",
@@ -143,26 +197,47 @@ if __name__ == "__main__":
         help="Dataset name to evaluate the `model_id`. Should be loadable with 🤗 Datasets",
     )
     parser.add_argument(
-        "--config", type=str, required=True, help="Config of the dataset. *E.g.* `'en'`  for Common Voice"
-    )
-    parser.add_argument("--split", type=str, required=True, help="Split of the dataset. *E.g.* `'test'`")
-    parser.add_argument(
-        "--chunk_length_s", type=float, default=None, help="Chunk length in seconds. Defaults to 5 seconds."
-    )
-    parser.add_argument(
-        "--stride_length_s", type=float, default=None, help="Stride of the audio chunks. Defaults to 1 second."
+        "--config",
+        type=str,
+        required=True,
+        help="Config of the dataset. *E.g.* `'en'`  for Common Voice",
     )
     parser.add_argument(
-        "--log_outputs", action="store_true", help="If defined, write outputs to log file for analysis."
+        "--split", type=str, required=True, help="Split of the dataset. *E.g.* `'test'`"
     )
     parser.add_argument(
-        "--ctcdecode", action="store_true", help="Apply the ctc decoder to the output (only if present in the model card)."
+        "--chunk_length_s",
+        type=float,
+        default=None,
+        help="Chunk length in seconds. Defaults to 5 seconds.",
+    )
+    parser.add_argument(
+        "--stride_length_s",
+        type=float,
+        default=None,
+        help="Stride of the audio chunks. Defaults to 1 second.",
+    )
+    parser.add_argument(
+        "--log_outputs",
+        action="store_true",
+        help="If defined, write outputs to log file for analysis.",
+    )
+    parser.add_argument(
+        "--ctcdecode",
+        action="store_true",
+        help="Apply the ctc decoder to the output (only if present in the model card).",
     )
     parser.add_argument(
         "--device",
         type=int,
         default=None,
         help="The device to run the pipeline on. -1 for CPU (default), 0 for the first GPU and so on.",
+    )
+    parser.add_argument(
+        "--beam_width",
+        type=int,
+        default=1,
+        help="Beam width used by the pyctc decoder.",
     )
     args = parser.parse_args()
 
